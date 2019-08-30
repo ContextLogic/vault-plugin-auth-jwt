@@ -15,6 +15,7 @@ import (
 	"github.com/hashicorp/vault/api"
 )
 
+const defaultAddress = "localhost"
 const defaultMount = "oidc"
 const defaultPort = "8250"
 
@@ -45,9 +46,16 @@ func (h *CLIHandler) Auth(c *api.Client, m map[string]string) (*api.Secret, erro
 		port = defaultPort
 	}
 
+	// looking for an IP address here
+	reAddress := regexp.MustCompile(`(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])`)
+	address := defaultAddress
+	if reAddress.MatchString(c.Address()) {
+		address = reAddress.FindString(c.Address())
+	}
+
 	role := m["role"]
 
-	authURL, err := fetchAuthURL(c, role, mount, port)
+	authURL, err := fetchAuthURL(c, role, mount, address, port)
 	if err != nil {
 		return nil, err
 	}
@@ -105,12 +113,12 @@ func (h *CLIHandler) Auth(c *api.Client, m map[string]string) (*api.Secret, erro
 	}
 }
 
-func fetchAuthURL(c *api.Client, role, mount, port string) (string, error) {
+func fetchAuthURL(c *api.Client, role, mount, address, port string) (string, error) {
 	var authURL string
 
 	data := map[string]interface{}{
 		"role":         role,
-		"redirect_uri": fmt.Sprintf("http://localhost:%s/oidc/callback", port),
+		"redirect_uri": fmt.Sprintf("http://%s:%s/oidc/callback", address, port),
 	}
 
 	secret, err := c.Logical().Write(fmt.Sprintf("auth/%s/oidc/auth_url", mount), data)
