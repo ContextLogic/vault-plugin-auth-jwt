@@ -1,0 +1,40 @@
+#####################
+## START TEMPLATES ##
+#####################
+
+.default_dind_setup_template: &default_dind_setup
+  image: docker:18.09.7
+  services:
+    - docker:18.09.7-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_DRIVER: overlay2
+
+#####################
+##  END TEMPLATES  ##
+#####################
+
+### Stages are sequential (all jobs in a stage complete)
+stages:
+  - build - binary
+
+## build and push vault  dependencies
+build:vault-jwt:bin:
+  stage: build - binary
+  image: golang:1.12.9-stretch
+  script:
+    - apt-get update && apt-get install python python-pip git zip -y
+    - pip install --upgrade awscli==1.14.5
+    # Build only linux/amd64
+    - sed -i 's/XC_ARCH=${XC_ARCH:-\"386 amd64\"}/XC_ARCH=${XC_ARCH:-\"amd64\"}/gI' scripts/build.sh
+    - sed -i 's/XC_OS=${XC_OS:-linux darwin windows freebsd openbsd netbsd solaris}/XC_OS=${XC_OS:-linux}/gI' scripts/build.sh
+    - sed -i 's/XC_OSARCH=${XC_OSARCH:-\"linux\/386 linux\/amd64 linux\/arm linux\/arm64 darwin\/386 darwin\/amd64 windows\/386 windows\/amd64 freebsd\/386 freebsd\/amd64 freebsd\/arm openbsd\/386 openbsd\/amd64 openbsd\/arm netbsd\/386 netbsd\/amd64 netbsd\/arm solaris\/amd64\"}/XC_OSARCH=${XC_OSARCH:-\"linux\/amd64\"}/gI' scripts/build.sh
+    # Need the make bootstrap stuff to be able to compile
+    - make bootstrap
+    # Build binary to test if it compiles
+    - make bin
+    # Upload the forked file
+    - aws s3 cp cli.go s3://wish-security/vault-plugin-auth-jwt/
+  only:
+    refs:
+      - master
