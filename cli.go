@@ -79,7 +79,11 @@ func (h *CLIHandler) Auth(c *api.Client, m map[string]string) (*api.Secret, erro
 		} else {
 			response = successHTML
 		}
-		entityCheck(c, secret)
+		err = entityCheck(c, secret)
+		if err != nil {
+			summary, detail := parseError(err)
+			response = errorHTML(summary, detail)
+		}
 		w.Write([]byte(response))
 		doneCh <- loginResp{secret, err}
 	})
@@ -223,10 +227,15 @@ Configuration:
 	return strings.TrimSpace(help)
 }
 
-//TODO: figure out errors and what to do in case of errors
-func entityCheck(c *api.Client, secret *api.Secret) {
+// entityCheck checks if an entity with username@wish.com exists or not. If it doesn't exist, it creates it approrpiately
+// If it exists, then it links it appropriately
+// End result: The log in request will be linked to the right entity
+func entityCheck(c *api.Client, secret *api.Secret) error {
 
-	createdEntityObj, _ := c.Logical().Read(fmt.Sprintf("identity/entity/id/%s", secret.Auth.EntityID))
+	createdEntityObj, err := c.Logical().Read(fmt.Sprintf("identity/entity/id/%s", secret.Auth.EntityID))
+	if err != nil {
+		return err
+	}
 	entityData := createdEntityObj.Data["aliases"].([]interface{})
 	// Since we just logged in, there is guaranteed to be atleast 1 alias
 	aliasData := entityData[0].(map[string]interface{})
@@ -243,14 +252,16 @@ func entityCheck(c *api.Client, secret *api.Secret) {
 	// a) either find an entity with that name if it exists (eg. person logged into userpass first) -> need to merge in this case
 	// b) entity name with that name doesn't exist -> simply update our name to the name it should be
 
-	// Equal, means this is not first login, simply return
+	// Equal, means this is not first login, simply return nil (no error)
 	if actualEntityName == entityNameShouldBe {
-		return
+		return nil
 	}
 
 	// Try to find an entity name with the supposed name...
 	existingEntityObj, err := c.Logical().Read(fmt.Sprintf("identity/entity/name/%s", entityNameShouldBe))
-
+	if err != nil {
+		return err
+	}
 	// If it exists -> Need to merge
 	if existingEntityObj != nil && err == nil {
 		// Entity with that name exists AND is different from this entity created
@@ -261,14 +272,23 @@ func entityCheck(c *api.Client, secret *api.Secret) {
 			"to_entity_id":    existingEntityObj.Data["id"],
 			"from_entity_ids": secret.Auth.EntityID,
 		}
-		c.Logical().Write("identity/entity/merge", data)
+		_, err = c.Logical().Write("identity/entity/merge", data)
+		if err != nil {
+			return err
+		}
 		fmt.Printf("\n Merged two entities together: %s %s \n", existingEntityObj.Data["id"], secret.Auth.EntityID)
-		return
+		return nil
 	}
 
 	// If here, it means we haven't found any entitiy with the actual name, so we should update our name to the supposed name
 	data := map[string]interface{}{
 		"name": entityNameShouldBe,
 	}
-	c.Logical().Write(fmt.Sprintf("identity/entity/id/%s", secret.Auth.EntityID), data)
+	_, err = c.Logical().Write(fmt.Sprintf("identity/entity/id/%s", secret.Auth.EntityID), data)
+
+	// For readibility purposes, otherwise could just do return err and would have same result as below
+	if err != nil {
+		return err
+	}
+	return nil
 }
