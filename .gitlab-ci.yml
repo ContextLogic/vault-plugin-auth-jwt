@@ -73,6 +73,7 @@ test:vault-jwt:bin:
 ## Run linter
 test:vault-jwt:lint:
   stage: test
+  allow_failure: true
   image: registry-gitlab.i.wish.com/contextlogic/vault-users/ci-test:current
   script:
     # cache the vendor dir
