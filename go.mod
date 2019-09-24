@@ -1,4 +1,4 @@
-module github.com/hashicorp/vault-plugin-auth-jwt
+module github.com/ContextLogic/vault-plugin-auth-jwt
 
 go 1.12
 
