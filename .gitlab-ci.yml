@@ -36,7 +36,7 @@ stages:
 
 # Whatever happens, we re-tag current. It could be an issue if a lot of updates were pushed at the same time
 # but we don't update this repo that often
-build:test:image:
+build:image:test:
   stage: build
   allow_failure: true
   <<: *default_dind_setup
@@ -73,7 +73,7 @@ test:vault-jwt:bin:
 ## Run linter
 test:vault-jwt:lint:
   stage: test
-  image: golang:1.12.9-stretch
+  image: registry-gitlab.i.wish.com/contextlogic/vault-users/ci-test:current
   script:
     # cache the vendor dir
     - shasum go.sum > GO_SUM_SHA_NEW
