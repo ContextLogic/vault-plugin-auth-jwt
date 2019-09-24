@@ -46,7 +46,7 @@ build:test:image:
     # for the ci-test image
     - >
       docker pull registry-gitlab.i.wish.com/contextlogic/vault-plugin-auth-jwt/ci-test:$BASE ||
-      docker build . -f build/ci.test.Dockerfile -t registry-gitlab.i.wish.com/contextlogic/vault-plugin-auth-jwt/ci-test:$BASE &&
+      docker build . -f docker/ci.test.Dockerfile -t registry-gitlab.i.wish.com/contextlogic/vault-plugin-auth-jwt/ci-test:$BASE &&
       docker push registry-gitlab.i.wish.com/contextlogic/vault-plugin-auth-jwt/ci-test:$BASE
     - >
       docker tag registry-gitlab.i.wish.com/contextlogic/vault-plugin-auth-jwt/ci-test:$BASE registry-gitlab.i.wish.com/contextlogic/vault-plugin-auth-jwt/ci-test:current &&
