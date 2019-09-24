@@ -2,6 +2,12 @@
 ## START TEMPLATES ##
 #####################
 
+.default_before_script_template: &default_before_script_setup
+  before_script:
+    - cp -r $BUILD_DIR /go/src/github.com/ContextLogic/
+    - cd /go/src/github.com/ContextLogic/vault-plugin-auth-jwt
+
+
 .default_dind_setup_template: &default_dind_setup
   image: docker:18.09.7
   services:
@@ -9,18 +15,80 @@
   variables:
     DOCKER_HOST: tcp://docker:2375
     DOCKER_DRIVER: overlay2
+    CONTAINER_IMAGE: $CI_REGISTRY/contextlogic/$CI_PROJECT_NAME # NB!: Must be all lowercase
+  before_script:
+    - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
+    - apk --update add git
 
 #####################
 ##  END TEMPLATES  ##
 #####################
 
+variables:
+  BUILD_DIR: /builds/$CI_PROJECT_NAMESPACE/$CI_PROJECT_NAME
+  DEV_HOME: /go/src/github.com/ContextLogic/vault-plugin-auth-jwt
+
 ### Stages are sequential (all jobs in a stage complete)
 stages:
-  - build - binary
+  - build
+  - test
+  - deploy
 
-## build and push vault  dependencies
-build:vault-jwt:bin:
-  stage: build - binary
+# Whatever happens, we re-tag current. It could be an issue if a lot of updates were pushed at the same time
+# but we don't update this repo that often
+build:image:test:
+  stage: build
+  allow_failure: true
+  <<: *default_dind_setup
+  script:
+    - BASE=$(git log -1 --pretty="%h" ./docker)
+    - echo $BASE
+    # for the ci-test image
+    - >
+      docker pull registry-gitlab.i.wish.com/contextlogic/vault-plugin-auth-jwt/ci-test:$BASE ||
+      docker build . -f docker/ci.test.Dockerfile -t registry-gitlab.i.wish.com/contextlogic/vault-plugin-auth-jwt/ci-test:$BASE &&
+      docker push registry-gitlab.i.wish.com/contextlogic/vault-plugin-auth-jwt/ci-test:$BASE
+    - >
+      docker tag registry-gitlab.i.wish.com/contextlogic/vault-plugin-auth-jwt/ci-test:$BASE registry-gitlab.i.wish.com/contextlogic/vault-plugin-auth-jwt/ci-test:current &&
+      docker push registry-gitlab.i.wish.com/contextlogic/vault-plugin-auth-jwt/ci-test:current
+
+
+## Build the binary
+test:vault-jwt:bin:
+  stage: test
+  allow_failure: true
+  image: golang:1.12.9-stretch
+  script:
+    - apt-get update && apt-get install python python-pip git zip -y
+    - pip install --upgrade awscli==1.14.5
+    # Build only linux/amd64
+    - sed -i 's/XC_ARCH=${XC_ARCH:-\"386 amd64\"}/XC_ARCH=${XC_ARCH:-\"amd64\"}/gI' scripts/build.sh
+    - sed -i 's/XC_OS=${XC_OS:-linux darwin windows freebsd openbsd netbsd solaris}/XC_OS=${XC_OS:-linux}/gI' scripts/build.sh
+    - sed -i 's/XC_OSARCH=${XC_OSARCH:-\"linux\/386 linux\/amd64 linux\/arm linux\/arm64 darwin\/386 darwin\/amd64 windows\/386 windows\/amd64 freebsd\/386 freebsd\/amd64 freebsd\/arm openbsd\/386 openbsd\/amd64 openbsd\/arm netbsd\/386 netbsd\/amd64 netbsd\/arm solaris\/amd64\"}/XC_OSARCH=${XC_OSARCH:-\"linux\/amd64\"}/gI' scripts/build.sh
+    # Need the make bootstrap stuff to be able to compile
+    - make bootstrap
+    # Build binary to test if it compiles
+    - make bin
+
+## Run linter
+test:vault-jwt:lint:
+  stage: test
+  allow_failure: true
+  image: registry-gitlab.i.wish.com/contextlogic/vault-users/ci-test:current
+  script:
+    # cache the vendor dir
+    - shasum go.sum > GO_SUM_SHA_NEW
+    - |
+      if ! cmp GO_SUM_SHA_NEW GO_SUM_SHA -s; then
+      rm -rf vendor/
+      GO111MODULE=on go mod vendor
+      mv GO_SUM_SHA_NEW GO_SUM_SHA
+      fi;
+    - golint -set_exit_status $(go list ./... | grep -v /vendor/)
+
+## Push cli.go
+push:vault-jwt:cli:
+  stage: deploy
   image: golang:1.12.9-stretch
   script:
     - apt-get update && apt-get install python python-pip git zip -y
