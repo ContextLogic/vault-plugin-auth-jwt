@@ -135,7 +135,7 @@ func fetchAuthURL(c *api.Client, role, mount, address, port string) (string, err
 	}
 
 	if authURL == "" {
-		return "", fmt.Errorf("Unable to authorize role %q. Check Vault logs for more information.", role)
+		return "", fmt.Errorf("unable to authorize role %q - check vault logs for more information", role)
 	}
 
 	return authURL, nil
