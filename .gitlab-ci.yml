@@ -100,9 +100,8 @@ push:vault-jwt:cli:
     - make bootstrap
     # Build binary to test if it compiles
     - make bin
-    - ls -l bin/
     # Upload the forked file
-    #- aws s3 cp bin/ s3://wish-security/vault-plugin-auth-jwt/
-  #only:
-  #  refs:
-  #    - master
+    - aws s3 cp bin/vault-plugin-auth-jwt s3://wish-security/vault-plugin-auth-jwt/
+  only:
+    refs:
+      - master
