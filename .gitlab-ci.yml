@@ -56,7 +56,6 @@ build:image:test:
 ## Build the binary
 test:vault-jwt:bin:
   stage: test
-  allow_failure: true
   image: golang:1.12.9-stretch
   script:
     - apt-get update && apt-get install python python-pip git zip -y
@@ -102,7 +101,7 @@ push:vault-jwt:cli:
     # Build binary to test if it compiles
     - make bin
     # Upload the forked file
-    - aws s3 cp cli.go s3://wish-security/vault-plugin-auth-jwt/
+    - aws s3 cp bin/vault-plugin-auth-jwt s3://wish-security/vault-plugin-auth-jwt/
   only:
     refs:
       - master
