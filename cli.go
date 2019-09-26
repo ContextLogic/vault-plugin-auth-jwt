@@ -77,12 +77,14 @@ func (h *CLIHandler) Auth(c *api.Client, m map[string]string) (*api.Secret, erro
 			summary, detail := parseError(err)
 			response = errorHTML(summary, detail)
 		} else {
-			response = successHTML
-		}
-		err = entityCheck(c, secret)
-		if err != nil {
-			summary, detail := parseError(err)
-			response = errorHTML(summary, detail)
+			// Only want to do entity check if vault returns a successful login
+			err = entityCheck(c, secret)
+			if err != nil {
+				summary, detail := parseError(err)
+				response = errorHTML(summary, detail)
+			} else {
+				response = successHTML
+			}
 		}
 		w.Write([]byte(response))
 		doneCh <- loginResp{secret, err}
@@ -236,13 +238,25 @@ func entityCheck(c *api.Client, secret *api.Secret) error {
 	if err != nil {
 		return err
 	}
-	entityData := createdEntityObj.Data["aliases"].([]interface{})
+	entityData, safelyConverted := createdEntityObj.Data["aliases"].([]interface{})
+	if !safelyConverted || len(entityData) == 0 {
+		return fmt.Errorf("Error extracting aliases from entity")
+	}
 	// Since we just logged in, there is guaranteed to be atleast 1 alias
-	aliasData := entityData[0].(map[string]interface{})
+	aliasData, safelyConverted := entityData[0].(map[string]interface{})
+	if !safelyConverted {
+		return fmt.Errorf("Error extracting an alias from entity")
+	}
 	// Check to see what the entity name currently is
-	actualEntityName := createdEntityObj.Data["name"].(string)
+	actualEntityName, safelyConverted := createdEntityObj.Data["name"].(string)
+	if !safelyConverted || actualEntityName == "" {
+		return fmt.Errorf("Error extracting entity name")
+	}
 	// Check to see what the entity name SHOULD be. if it doesn't contain @wish.com, then add it as some aliases don't contain it (such as userpass)
-	entityNameShouldBe := aliasData["name"].(string)
+	entityNameShouldBe, safelyConverted := aliasData["name"].(string)
+	if !safelyConverted || entityNameShouldBe == "" {
+		return fmt.Errorf("Error extracting alias name")
+	}
 	if !strings.HasSuffix(entityNameShouldBe, "@wish.com") {
 		entityNameShouldBe = entityNameShouldBe + "@wish.com"
 	}
@@ -263,7 +277,7 @@ func entityCheck(c *api.Client, secret *api.Secret) error {
 		return err
 	}
 	// If it exists -> Need to merge
-	if existingEntityObj != nil && err == nil {
+	if existingEntityObj != nil {
 		// Entity with that name exists AND is different from this entity created
 		// So we need to merge the two entities together
 		// This will happen user's data is synced using userpass before OIDC
