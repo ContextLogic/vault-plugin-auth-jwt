@@ -77,9 +77,15 @@ func (h *CLIHandler) Auth(c *api.Client, m map[string]string) (*api.Secret, erro
 			summary, detail := parseError(err)
 			response = errorHTML(summary, detail)
 		} else {
-			response = successHTML
+			// Only want to do entity check if vault returns a successful login
+			err = entityCheck(c, secret)
+			if err != nil {
+				summary, detail := parseError(err)
+				response = errorHTML(summary, detail)
+			} else {
+				response = successHTML
+			}
 		}
-
 		w.Write([]byte(response))
 		doneCh <- loginResp{secret, err}
 	})
@@ -131,7 +137,7 @@ func fetchAuthURL(c *api.Client, role, mount, address, port string) (string, err
 	}
 
 	if authURL == "" {
-		return "", errors.New(fmt.Sprintf("Unable to authorize role %q. Check Vault logs for more information.", role))
+		return "", fmt.Errorf("unable to authorize role %q - check vault logs for more information", role)
 	}
 
 	return authURL, nil
@@ -221,4 +227,82 @@ Configuration:
 `
 
 	return strings.TrimSpace(help)
+}
+
+// entityCheck checks if an entity with username@wish.com exists or not. If it doesn't exist, it creates it approrpiately
+// If it exists, then it links it appropriately
+// End result: The log in request will be linked to the right entity
+func entityCheck(c *api.Client, secret *api.Secret) error {
+
+	createdEntityObj, err := c.Logical().Read(fmt.Sprintf("identity/entity/id/%s", secret.Auth.EntityID))
+	if err != nil {
+		return err
+	}
+	entityData, safelyConverted := createdEntityObj.Data["aliases"].([]interface{})
+	if !safelyConverted || len(entityData) == 0 {
+		return fmt.Errorf("Error extracting aliases from entity")
+	}
+	// Since we just logged in, there is guaranteed to be atleast 1 alias
+	aliasData, safelyConverted := entityData[0].(map[string]interface{})
+	if !safelyConverted {
+		return fmt.Errorf("Error extracting an alias from entity")
+	}
+	// Check to see what the entity name currently is
+	actualEntityName, safelyConverted := createdEntityObj.Data["name"].(string)
+	if !safelyConverted || actualEntityName == "" {
+		return fmt.Errorf("Error extracting entity name")
+	}
+	// Check to see what the entity name SHOULD be. if it doesn't contain @wish.com, then add it as some aliases don't contain it (such as userpass)
+	entityNameShouldBe, safelyConverted := aliasData["name"].(string)
+	if !safelyConverted || entityNameShouldBe == "" {
+		return fmt.Errorf("Error extracting alias name")
+	}
+	if !strings.HasSuffix(entityNameShouldBe, "@wish.com") {
+		entityNameShouldBe = entityNameShouldBe + "@wish.com"
+	}
+	fmt.Printf("\n The actual entity name: %s   The expected entity name:  %s \n", actualEntityName, entityNameShouldBe)
+	// Check to see if the entity name is equal. If equal, that means we already have the correct entity and don't need to do anything
+	// If not equal then we need to
+	// a) either find an entity with that name if it exists (eg. person logged into userpass first) -> need to merge in this case
+	// b) entity name with that name doesn't exist -> simply update our name to the name it should be
+
+	// Equal, means this is not first login, simply return nil (no error)
+	if actualEntityName == entityNameShouldBe {
+		return nil
+	}
+
+	// Try to find an entity name with the supposed name...
+	existingEntityObj, err := c.Logical().Read(fmt.Sprintf("identity/entity/name/%s", entityNameShouldBe))
+	if err != nil {
+		return err
+	}
+	// If it exists -> Need to merge
+	if existingEntityObj != nil {
+		// Entity with that name exists AND is different from this entity created
+		// So we need to merge the two entities together
+		// This will happen user's data is synced using userpass before OIDC
+		// The entity object that has the correct name is the right one and we should merge the newly created entity INTO that
+		data := map[string]interface{}{
+			"to_entity_id":    existingEntityObj.Data["id"],
+			"from_entity_ids": secret.Auth.EntityID,
+		}
+		_, err = c.Logical().Write("identity/entity/merge", data)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("\n Merged two entities together: %s %s \n", existingEntityObj.Data["id"], secret.Auth.EntityID)
+		return nil
+	}
+
+	// If here, it means we haven't found any entitiy with the actual name, so we should update our name to the supposed name
+	data := map[string]interface{}{
+		"name": entityNameShouldBe,
+	}
+	_, err = c.Logical().Write(fmt.Sprintf("identity/entity/id/%s", secret.Auth.EntityID), data)
+
+	// For readibility purposes, otherwise could just do return err and would have same result as below
+	if err != nil {
+		return err
+	}
+	return nil
 }
