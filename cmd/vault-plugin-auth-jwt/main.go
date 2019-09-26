@@ -4,7 +4,7 @@ import (
 	"log"
 	"os"
 
-	jwtauth "github.com/hashicorp/vault-plugin-auth-jwt"
+	jwtauth "github.com/ContextLogic/vault-plugin-auth-jwt"
 	"github.com/hashicorp/vault/api"
 	"github.com/hashicorp/vault/sdk/plugin"
 )
