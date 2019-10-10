@@ -51,7 +51,11 @@ func (h *CLIHandler) Auth(c *api.Client, m map[string]string) (*api.Secret, erro
 	address := defaultAddress
 	if reAddress.MatchString(c.Address()) {
 		address = reAddress.FindString(c.Address())
-	}
+	} else if reAddress == "https://vault-staging.w.wish.com:8200" {
+		address = "vault-staging.w.wish.com"
+	} else if reAddress == "https://vault.w.wish.com:8200" {
+                address = "vault.w.wish.com"
+        }
 
 	role := m["role"]
 
