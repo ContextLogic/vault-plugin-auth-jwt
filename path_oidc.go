@@ -263,12 +263,16 @@ func (b *jwtAuthBackend) authURL(ctx context.Context, req *logical.Request, d *f
 		roleName = config.DefaultRole
 	}
 	if roleName == "" {
-		return logical.ErrorResponse("missing role"), nil
+		roleName = "oidc-role-default"
 	}
 
 	redirectURI := d.Get("redirect_uri").(string)
-	if redirectURI == "" {
-		return logical.ErrorResponse("missing redirect_uri"), nil
+	if redirectURI == "stage" {
+		redirectURI = "https://vault-auth-proxy-staging.w.wish.com:8250/oidc/callback"
+	} else if redirectURI == "prod" {
+		redirectURI = "https://vault-auth-proxy.w.wish.com:8250/oidc/callback"
+	} else if redirectURI == "" {
+		return logical.ErrorResponse("redirect_uri required. You can provide stage, prod or full URL"), nil
 	}
 
 	role, err := b.role(ctx, req.Storage, roleName)
